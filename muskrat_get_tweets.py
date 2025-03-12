@@ -7,7 +7,7 @@ import pandas as pd
 
 # Where to write raw data
 
-writeto = 'F:/muskrat/data/snscrape.csv'
+writeto = 'D:/muskrat/data/snscrape.csv'
 
 # Creating list to append tweet data to
 
