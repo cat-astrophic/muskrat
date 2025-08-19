@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import statsmodels.api as stats
+from statsmodels.tsa.stattools import grangercausalitytests as gc
 from matplotlib import pyplot as plt
 from pylab import rcParams
 
@@ -36,7 +37,7 @@ for i in range(np.shape(stock)[1]):
 
 # Reading in the sentiment analysis results
 
-data = pd.read_csv('C:/Users/Michael/Documents/Data/muskrat/data/sentiment_data.csv')
+data = pd.read_csv(direc + 'data/sentiment_data.csv')
 
 # Create dates without time
 
@@ -128,6 +129,45 @@ for i in range(1,len(df)):
 
 df = pd.concat([df, pd.Series(lags, name = 'Lag')], axis = 1)
 
+# Creating lag sentiment data
+
+lag_nega = [None]
+lag_neut = [None]
+lag_posi = [None]
+
+lag_ang = [None]
+lag_dis = [None]
+lag_neg = [None]
+lag_joy = [None]
+lag_pos = [None]
+lag_fea = [None]
+lag_sad = [None]
+lag_tru = [None]
+lag_sur = [None]
+
+for i in range(1,len(df)):
+    
+    lag_nega.append(df.Negative[i-1])
+    lag_neut.append(df.Neutral[i-1])
+    lag_posi.append(df.Positive[i-1])
+    
+    lag_ang.append(df.Anger[i-1])
+    lag_dis.append(df.Disgust[i-1])
+    lag_neg.append(df.Negative_E[i-1])
+    lag_joy.append(df.Joy[i-1])
+    lag_pos.append(df.Positive_E[i-1])
+    lag_fea.append(df.Fear[i-1])
+    lag_sad.append(df.Sadness[i-1])
+    lag_tru.append(df.Trust[i-1])
+    lag_sur.append(df.Surprise[i-1])
+
+df = pd.concat([df, pd.Series(lag_nega, name = 'Negative_Lag'), pd.Series(lag_neut, name = 'Neutral_Lag'),
+                pd.Series(lag_pos, name = 'Positive_Lag'), pd.Series(lag_ang, name = 'Anger_Lag'),
+                pd.Series(lag_dis, name = 'Disgust_Lag'), pd.Series(lag_neg, name = 'Negative_E_Lag'),
+                pd.Series(lag_joy, name = 'Joy_Lag'), pd.Series(lag_pos, name = 'Positive_E_Lag'),
+                pd.Series(lag_fea, name = 'Fear_Lag'), pd.Series(lag_sad, name = 'Sadness_Lag'),
+                pd.Series(lag_tru, name = 'Trust_Lag'), pd.Series(lag_sur, name = 'Surprise_Lag')], axis = 1)
+
 # Adding a fixed effect for pre/post buyout
 
 df = pd.concat([df, pd.Series([0]*19 + [1]*22, name = 'Post')], axis = 1)
@@ -148,25 +188,38 @@ df.Sadness = df.Sadness / 1000
 df.Trust = df.Trust / 1000
 df.Surprise = df.Surprise / 1000
 
+# Adding a variable for the earnings call
+
+earn = [1 if i == 12 else 0 for i in range(len(df))]
+ep = [1 if i >= 12 else 0 for i in range(len(df))]
+
+df = pd.concat([df, pd.Series(earn, name = 'EC'), pd.Series(ep, name = 'EC_Post')], axis = 1)
+
 # Baseline regressions
 
 reg = df.iloc[1:]
 
 Y = reg['TSLA']
 X0 = stats.add_constant(reg[['Lag', 'DMT']])
-X1 = stats.add_constant(reg[['Lag', 'DMT', 'Post']])
-X2 = stats.add_constant(reg[['Lag', 'DMT', 'Post', 'Positive', 'Negative', 'Neutral']])
-X3 = stats.add_constant(reg[['Lag', 'DMT', 'Post', 'Anger', 'Disgust', 'Negative_E', 'Joy', 'Positive_E', 'Fear', 'Sadness', 'Trust', 'Surprise']])
+X1 = stats.add_constant(reg[['Lag', 'DMT', 'Post', 'EC']])
+X2 = stats.add_constant(reg[['Lag', 'DMT', 'Post', 'EC', 'Positive', 'Negative', 'Neutral']])
+X3 = stats.add_constant(reg[['Lag', 'DMT', 'Post', 'EC', 'Positive', 'Negative', 'Neutral', 'Positive_Lag', 'Negative_Lag', 'Neutral_Lag']])
+X4 = stats.add_constant(reg[['Lag', 'DMT', 'Post', 'EC', 'Anger', 'Disgust', 'Negative_E', 'Joy', 'Positive_E', 'Fear', 'Sadness', 'Trust', 'Surprise']])
+X5 = stats.add_constant(reg[['Lag', 'DMT', 'Post', 'EC', 'Anger', 'Disgust', 'Negative_E', 'Joy', 'Positive_E', 'Fear', 'Sadness', 'Trust', 'Surprise', 'Anger_Lag', 'Disgust_Lag', 'Negative_E_Lag', 'Joy_Lag', 'Positive_E_Lag', 'Fear_Lag', 'Sadness_Lag', 'Trust_Lag', 'Surprise_Lag']])
 
 res0 = stats.OLS(Y,X0).fit(cov_type = 'HC1')
 res1 = stats.OLS(Y,X1).fit(cov_type = 'HC1')
 res2 = stats.OLS(Y,X2).fit(cov_type = 'HC1')
 res3 = stats.OLS(Y,X3).fit(cov_type = 'HC1')
+res4 = stats.OLS(Y,X4).fit(cov_type = 'HC1')
+res5 = stats.OLS(Y,X5).fit(cov_type = 'HC1')
 
 print(res0.summary())
 print(res1.summary())
 print(res2.summary())
 print(res3.summary())
+print(res4.summary())
+print(res5.summary())
 
 # Elasticity regressions
 
@@ -194,26 +247,78 @@ reg = pd.concat([reg, pd.Series(np.log(reg.TSLA), name = 'lnTSLA'),
                  pd.Series(np.log(reg.Trust), name = 'lnTrust'),
                  pd.Series(np.log(reg.Surprise), name = 'lnSurprise')], axis = 1)
 
+reg = pd.concat([reg, pd.Series(np.log(reg.Positive_Lag), name = 'lnPositive_Lag'),
+                 pd.Series(np.log(reg.Negative_Lag), name = 'lnNegative_Lag'),
+                 pd.Series(np.log(reg.Neutral_Lag), name = 'lnNeutral_Lag'),        
+                 pd.Series(np.log(reg.Anger_Lag), name = 'lnAnger_Lag'),
+                 pd.Series(np.log(reg.Disgust_Lag), name = 'lnDisgust_Lag'),
+                 pd.Series(np.log(reg.Negative_E_Lag), name = 'lnNegative_E_Lag'),
+                 pd.Series(np.log(reg.Joy_Lag), name = 'lnJoy_Lag'),
+                 pd.Series(np.log(reg.Positive_E_Lag), name = 'lnPositive_E_Lag'),
+                 pd.Series(np.log(reg.Fear_Lag), name = 'lnFear_Lag'),
+                 pd.Series(np.log(reg.Sadness_Lag), name = 'lnSadness_Lag'),
+                 pd.Series(np.log(reg.Trust_Lag), name = 'lnTrust_Lag'),
+                 pd.Series(np.log(reg.Surprise_Lag), name = 'lnSurprise_Lag')], axis = 1)
+
 YY = reg['lnTSLA']
 XX0 = stats.add_constant(reg[['lnLag', 'lnDMT']])
-XX1 = stats.add_constant(reg[['lnLag', 'lnDMT', 'Post']])
-XX2 = stats.add_constant(reg[['lnLag', 'lnDMT', 'Post', 'lnPositive', 'lnNegative', 'lnNeutral']])
-XX3 = stats.add_constant(reg[['lnLag', 'lnDMT', 'Post', 'lnAnger', 'lnDisgust', 'lnNegative_E', 'lnJoy', 'lnPositive_E', 'lnFear', 'lnSadness', 'lnTrust', 'lnSurprise']])
+XX1 = stats.add_constant(reg[['lnLag', 'lnDMT', 'Post', 'EC']])
+XX2 = stats.add_constant(reg[['lnLag', 'lnDMT', 'Post', 'EC', 'lnPositive', 'lnNegative', 'lnNeutral']])
+XX3 = stats.add_constant(reg[['lnLag', 'lnDMT', 'Post', 'EC', 'lnPositive', 'lnNegative', 'lnNeutral', 'lnPositive_Lag', 'lnNegative_Lag', 'lnNeutral_Lag']])
+XX4 = stats.add_constant(reg[['lnLag', 'lnDMT', 'Post', 'EC', 'lnAnger', 'lnDisgust', 'lnNegative_E', 'lnJoy', 'lnPositive_E', 'lnFear', 'lnSadness', 'lnTrust', 'lnSurprise']])
+XX5 = stats.add_constant(reg[['lnLag', 'lnDMT', 'Post', 'EC', 'lnAnger', 'lnDisgust', 'lnNegative_E', 'lnJoy', 'lnPositive_E', 'lnFear', 'lnSadness', 'lnTrust', 'lnSurprise', 'lnAnger_Lag', 'lnDisgust_Lag', 'lnNegative_E_Lag', 'lnJoy_Lag', 'lnPositive_E_Lag', 'lnFear_Lag', 'lnSadness_Lag', 'lnTrust_Lag', 'lnSurprise_Lag']])
 
 rres0 = stats.OLS(YY,XX0).fit(cov_type = 'HC1')
 rres1 = stats.OLS(YY,XX1).fit(cov_type = 'HC1')
 rres2 = stats.OLS(YY,XX2).fit(cov_type = 'HC1')
 rres3 = stats.OLS(YY,XX3).fit(cov_type = 'HC1')
+rres4 = stats.OLS(YY,XX4).fit(cov_type = 'HC1')
+rres5 = stats.OLS(YY,XX5).fit(cov_type = 'HC1')
 
 print(rres0.summary())
 print(rres1.summary())
 print(rres2.summary())
 print(rres3.summary())
+print(rres4.summary())
+print(rres5.summary())
+
+# Log returns regressions
+
+log_ret = [np.log(df.TSLA[i]) - np.log(df.TSLA[i-1]) for i in range(1,len(df))]
+log_ret_lag = [None] + log_ret[:len(log_ret)-1]
+
+reg = pd.concat([reg, pd.Series(log_ret, name = 'Log_Return'),
+                 pd.Series(log_ret_lag, name = 'Log_Return_Lag')], axis = 1)
+
+reg = reg[1:]
+
+YYY = reg['Log_Return']
+XXX0 = stats.add_constant(reg[['Log_Return_Lag', 'lnDMT']])
+XXX1 = stats.add_constant(reg[['Log_Return_Lag', 'lnDMT', 'Post', 'EC']])
+XXX2 = stats.add_constant(reg[['Log_Return_Lag', 'lnDMT', 'Post', 'EC', 'lnPositive', 'lnNegative', 'lnNeutral']])
+XXX3 = stats.add_constant(reg[['Log_Return_Lag', 'lnDMT', 'Post', 'EC', 'lnPositive', 'lnNegative', 'lnNeutral', 'lnPositive_Lag', 'lnNegative_Lag', 'lnNeutral_Lag']])
+XXX4 = stats.add_constant(reg[['Log_Return_Lag', 'lnDMT', 'Post', 'EC', 'lnAnger', 'lnDisgust', 'lnNegative_E', 'lnJoy', 'lnPositive_E', 'lnFear', 'lnSadness', 'lnTrust', 'lnSurprise']])
+XXX5 = stats.add_constant(reg[['Log_Return_Lag', 'lnDMT', 'Post', 'EC', 'lnAnger', 'lnDisgust', 'lnNegative_E', 'lnJoy', 'lnPositive_E', 'lnFear', 'lnSadness', 'lnTrust', 'lnSurprise', 'lnAnger_Lag', 'lnDisgust_Lag', 'lnNegative_E_Lag', 'lnJoy_Lag', 'lnPositive_E_Lag', 'lnFear_Lag', 'lnSadness_Lag', 'lnTrust_Lag', 'lnSurprise_Lag']])
+
+rrres0 = stats.OLS(YYY,XXX0).fit(cov_type = 'HC1')
+rrres1 = stats.OLS(YYY,XXX1).fit(cov_type = 'HC1')
+rrres2 = stats.OLS(YYY,XXX2).fit(cov_type = 'HC1')
+rrres3 = stats.OLS(YYY,XXX3).fit(cov_type = 'HC1')
+rrres4 = stats.OLS(YYY,XXX4).fit(cov_type = 'HC1')
+rrres5 = stats.OLS(YYY,XXX5).fit(cov_type = 'HC1')
+
+print(rrres0.summary())
+print(rrres1.summary())
+print(rrres2.summary())
+print(rrres3.summary())
+print(rrres4.summary())
+print(rrres5.summary())
 
 # Saving results
 
-res_list = [res0, res1, res2, res3]
-rres_list = [rres0, rres1, rres2, rres3]
+res_list = [res0, res1, res2, res3, res4, res5]
+rres_list = [rres0, rres1, rres2, rres3, rres4, rres5]
+rrres_list = [rrres0, rrres1, rrres2, rrres3, rrres4, rrres5]
 
 for r in res_list:
     
@@ -226,6 +331,24 @@ for r in rres_list:
     file = open(direc + 'results/rres' + str(rres_list.index(r)) + '.txt', 'w')
     file.write(r.summary().as_text())
     file.close()
+
+for r in rrres_list:
+    
+    file = open(direc + 'results/rrres' + str(rrres_list.index(r)) + '.txt', 'w')
+    file.write(r.summary().as_text())
+    file.close()
+
+# Granger causality testing
+
+#gc1 = gc(reg[['lnTSLA', 'Trust']].dropna(), 8)
+#gc2 = gc(reg[['lnTSLA', 'lnTrust']].dropna(), 8)
+#gc3 = gc(reg[['Log_Return', 'Trust']].dropna(), 8)
+#gc4 = gc(reg[['Log_Return', 'lnTrust']].dropna(), 8)
+
+#gc5 = gc(reg[['Trust', 'lnTSLA']].dropna(), 8)
+#gc6 = gc(reg[['lnTrust', 'lnTSLA']].dropna(), 8)
+#gc7 = gc(reg[['Trust', 'Log_Return']].dropna(), 8)
+#gc8 = gc(reg[['lnTrust', 'Log_Return']].dropna(), 8)
 
 # Creating a time series plot for each of the three time series with two scales
 
